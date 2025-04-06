@@ -51,6 +51,7 @@ fun DetectorUI() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    // Доступные модели и их файлы
     val models = mapOf(
         "Плохое зрение" to ("model_blind.tflite" to "labels_blind.txt"),
         "Дети" to ("model_child.tflite" to "labels_child.txt"),
@@ -63,19 +64,20 @@ fun DetectorUI() {
 
     var outputText by remember { mutableStateOf("Ожидание инференса...") }
     var boundingBoxes by remember { mutableStateOf(listOf<BoundingBox>()) }
-
-    // В этой переменной сохраняю длительность инференса для передачи в OverlayView
     var inferenceTime by remember { mutableStateOf(0L) }
 
-    // Загружаю нужную модель и labels, подписываюсь на коллбэки результатов
-    val classifier = remember(modelName) {
-        YoloV8Classifier(
+    // Храним текущий классификатор (пересоздаётся при смене модели)
+    val classifierState = remember { mutableStateOf<YoloV8Classifier?>(null) }
+
+    // Пересоздаю классификатор, когда пользователь выбирает другую модель
+    LaunchedEffect(modelName) {
+        classifierState.value = YoloV8Classifier(
             context = context,
             modelPath = modelName,
             labelPath = labelName,
             onResult = { boxes, timeMs ->
                 boundingBoxes = boxes
-                inferenceTime = timeMs // сохраняю время, чтобы отобразить на экране
+                inferenceTime = timeMs
                 outputText = "⏱ ${timeMs}мс, Объектов: ${boxes.size}"
             },
             onEmpty = {
@@ -90,6 +92,7 @@ fun DetectorUI() {
         Box(modifier = Modifier.fillMaxWidth()) {
             var expanded by remember { mutableStateOf(false) }
 
+            // UI: выбор модели
             Button(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
                 Text(text = selectedLabel)
             }
@@ -109,7 +112,6 @@ fun DetectorUI() {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Камера + Overlay слой, в котором отображаются боксы и инференс-время
         AndroidView(
             factory = { ctx ->
                 val previewView = PreviewView(ctx)
@@ -131,12 +133,11 @@ fun DetectorUI() {
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
 
+                    // ⚠️ Анализ изображения теперь использует актуальный classifierState.value
                     analyzer.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
                         val bitmap = previewView.bitmap
                         if (bitmap != null) {
-                            // Запускаю инференс на кадре
-                            classifier.runInference(bitmap)
-                            // Передаю результаты и время в OverlayView
+                            classifierState.value?.runInference(bitmap)
                             overlay.setBoxes(boundingBoxes, inferenceTime)
                         }
                         imageProxy.close()
@@ -164,7 +165,7 @@ fun DetectorUI() {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Вывожу текст состояния инференса
+        // Отображение текущего статуса инференса
         Text(
             text = outputText,
             style = MaterialTheme.typography.labelSmall,
@@ -172,6 +173,7 @@ fun DetectorUI() {
         )
     }
 }
+
 
 
 
