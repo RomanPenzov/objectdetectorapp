@@ -18,23 +18,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.penzov.objectdetectorapp.ui.theme.ObjectDetectorAppTheme
+import com.penzov.objectdetectorapp.Speaker
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var cameraExecutor: ExecutorService
+    private lateinit var speaker: Speaker // Добавил озвучку
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d("DEBUG", "🚀 MainActivity запускается")
+        Log.d("DEBUG", "\uD83D\uDE80 MainActivity запускается")
 
+        speaker = Speaker(this) // Инициализация TTS
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         setContent {
             ObjectDetectorAppTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    DetectorUI()
+                    DetectorUI(speaker = speaker) // Передаю speaker в UI
                 }
             }
         }
@@ -42,16 +45,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        speaker.shutdown() // Чистим TTS
         cameraExecutor.shutdown()
     }
 }
 
 @Composable
-fun DetectorUI() {
+fun DetectorUI(speaker: Speaker) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Доступные модели и их файлы
     val models = mapOf(
         "Плохое зрение" to ("model_blind.tflite" to "labels_blind.txt"),
         "Дети" to ("model_child.tflite" to "labels_child.txt"),
@@ -66,10 +69,9 @@ fun DetectorUI() {
     var boundingBoxes by remember { mutableStateOf(listOf<BoundingBox>()) }
     var inferenceTime by remember { mutableStateOf(0L) }
 
-    // Храним текущий классификатор (пересоздаётся при смене модели)
     val classifierState = remember { mutableStateOf<YoloV8Classifier?>(null) }
 
-    // Пересоздаю классификатор, когда пользователь выбирает другую модель
+    // Когда модель сменилась - пересоздаю classifier
     LaunchedEffect(modelName) {
         classifierState.value = YoloV8Classifier(
             context = context,
@@ -79,6 +81,10 @@ fun DetectorUI() {
                 boundingBoxes = boxes
                 inferenceTime = timeMs
                 outputText = "⏱ ${timeMs}мс, Объектов: ${boxes.size}"
+
+                // Озвучка объектов
+                val labels = boxes.map { it.label }
+                speaker.speakObjectCounts(labels)
             },
             onEmpty = {
                 boundingBoxes = emptyList()
@@ -92,7 +98,6 @@ fun DetectorUI() {
         Box(modifier = Modifier.fillMaxWidth()) {
             var expanded by remember { mutableStateOf(false) }
 
-            // UI: выбор модели
             Button(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
                 Text(text = selectedLabel)
             }
@@ -133,7 +138,6 @@ fun DetectorUI() {
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
 
-                    // ⚠️ Анализ изображения теперь использует актуальный classifierState.value
                     analyzer.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
                         val bitmap = previewView.bitmap
                         if (bitmap != null) {
@@ -165,7 +169,6 @@ fun DetectorUI() {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Отображение текущего статуса инференса
         Text(
             text = outputText,
             style = MaterialTheme.typography.labelSmall,
@@ -173,7 +176,6 @@ fun DetectorUI() {
         )
     }
 }
-
 
 
 
