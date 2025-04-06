@@ -7,19 +7,21 @@ import java.util.Locale
 class Speaker(context: Context) {
 
     private lateinit var tts: TextToSpeech
+    private var lastSpokenText: String? = null
+    private var lastSpokenTime: Long = 0
+    private val speakIntervalMs: Long = 10000L // ⏱ Задержка между озвучками
 
     init {
         var tempTts: TextToSpeech? = null
 
         tempTts = TextToSpeech(context.applicationContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                tempTts?.language = Locale("ru") // ✅ безопасный вызов через ?.language
+                tempTts?.language = Locale("ru")
             }
         }
 
         tts = tempTts
     }
-
 
     fun speakObjectCounts(labels: List<String>) {
         if (labels.isEmpty()) return
@@ -30,7 +32,14 @@ class Speaker(context: Context) {
             if (count == 1) label else "${numberToText(count)} $label"
         }
 
-        tts.speak(sentence, TextToSpeech.QUEUE_FLUSH, null, "tts_id")
+        val currentTime = System.currentTimeMillis()
+        val shouldSpeak = sentence != lastSpokenText || (currentTime - lastSpokenTime > speakIntervalMs)
+
+        if (shouldSpeak) {
+            tts.speak(sentence, TextToSpeech.QUEUE_FLUSH, null, "tts_id")
+            lastSpokenText = sentence
+            lastSpokenTime = currentTime
+        }
     }
 
     fun shutdown() {
@@ -56,4 +65,5 @@ class Speaker(context: Context) {
         }
     }
 }
+
 
