@@ -92,7 +92,6 @@ class YoloV8Classifier(
         }
     }
 
-
     private fun processOutput(array: FloatArray): List<BoundingBox> {
         val boxes = mutableListOf<BoundingBox>()
 
@@ -120,6 +119,9 @@ class YoloV8Classifier(
                 val y1 = cy - h / 2
 
                 if (x1 in 0f..1f && y1 in 0f..1f && (x1 + w) in 0f..1f && (y1 + h) in 0f..1f) {
+                    val labelEn = labels.getOrElse(maxIdx) { "unknown" }
+                    // 💬 Показываю только перевод на русский язык
+                    val labelRu = labelTranslations[labelEn] ?: labelEn
                     boxes.add(
                         BoundingBox(
                             x = x1,
@@ -128,7 +130,7 @@ class YoloV8Classifier(
                             height = h,
                             confidence = maxConf,
                             classId = maxIdx,
-                            label = labels.getOrElse(maxIdx) { "unknown" }
+                            label = labelRu
                         )
                     )
                 }
@@ -138,10 +140,8 @@ class YoloV8Classifier(
         return applyNMS(boxes)
     }
 
-
     private fun applyNMS(boxes: List<BoundingBox>): List<BoundingBox> {
         val sorted = boxes.sortedByDescending { it.confidence }.toMutableList()
-
         val selected = mutableListOf<BoundingBox>()
 
         while (sorted.isNotEmpty()) {
@@ -176,12 +176,106 @@ class YoloV8Classifier(
         return interArea / (areaA + areaB - interArea)
     }
 
+    // 🔠 Здесь словарь с переводами меток (один раз встроен внутрь класса)
+    private val labelTranslations = mapOf(
+        "person" to "человек",
+        "bicycle" to "велосипед",
+        "car" to "машина",
+        "motorcycle" to "мотоцикл",
+        "airplane" to "самолёт",
+        "bus" to "автобус",
+        "train" to "поезд",
+        "truck" to "грузовик",
+        "boat" to "лодка",
+        "traffic light" to "светофор",
+        "fire hydrant" to "пожарный гидрант",
+        "stop sign" to "знак стоп",
+        "parking meter" to "паркомат",
+        "bench" to "лавочка",
+        "bird" to "птица",
+        "cat" to "кошка",
+        "dog" to "собака",
+        "horse" to "лошадь",
+        "sheep" to "овца",
+        "cow" to "корова",
+        "elephant" to "слон",
+        "bear" to "медведь",
+        "zebra" to "зебра",
+        "giraffe" to "жираф",
+        "backpack" to "рюкзак",
+        "umbrella" to "зонт",
+        "handbag" to "сумочка",
+        "tie" to "галстук",
+        "suitcase" to "чемодан",
+        "frisbee" to "фрисби",
+        "skis" to "лыжи",
+        "snowboard" to "сноуборд",
+        "sports ball" to "мяч",
+        "kite" to "воздушный змей",
+        "baseball bat" to "бейсбольная бита",
+        "baseball glove" to "бейсбольная перчатка",
+        "skateboard" to "скейтборд",
+        "surfboard" to "доска для серфинга",
+        "tennis racket" to "теннисная ракетка",
+        "bottle" to "бутылка",
+        "wine glass" to "бокал",
+        "cup" to "чашка",
+        "fork" to "вилка",
+        "knife" to "нож",
+        "spoon" to "ложка",
+        "bowl" to "миска",
+        "banana" to "банан",
+        "apple" to "яблоко",
+        "sandwich" to "бутерброд",
+        "orange" to "апельсин",
+        "broccoli" to "брокколи",
+        "carrot" to "морковь",
+        "hot dog" to "хот-дог",
+        "pizza" to "пицца",
+        "donut" to "пончик",
+        "cake" to "торт",
+        "chair" to "стул",
+        "couch" to "диван",
+        "potted plant" to "горшечное растение",
+        "bed" to "кровать",
+        "dining table" to "обеденный стол",
+        "toilet" to "туалет",
+        "tv" to "телевизор",
+        "laptop" to "ноутбук",
+        "mouse" to "мышка",
+        "remote" to "пульт",
+        "keyboard" to "клавиатура",
+        "cell phone" to "телефон",
+        "microwave" to "микроволновка",
+        "oven" to "духовка",
+        "toaster" to "тостер",
+        "sink" to "раковина",
+        "refrigerator" to "холодильник",
+        "book" to "книга",
+        "clock" to "часы",
+        "vase" to "ваза",
+        "scissors" to "ножницы",
+        "teddy bear" to "плюшевый медведь",
+        "hair drier" to "фен",
+        "toothbrush" to "зубная щётка",
+        "cliff" to "утёс",
+        "edge-of-a-pond" to "край водоема",
+        "edge-of-the-sidewalk" to "бордюр",
+        "fence" to "забор",
+        "green-traffic-light-pedestrian" to "зелёный свет для пешехода",
+        "hatch" to "люк",
+        "pedestrian-sign" to "знак пешехода",
+        "railing-fence" to "перила",
+        "red-traffic-light-pedestrian" to "красный свет для пешехода",
+        "snow" to "снег",
+        "steps-down" to "ступени вниз",
+        "steps-up" to "ступени вверх",
+        "zebra-marking" to "зебра (разметка)"
+    )
 
     companion object {
         private const val CONFIDENCE_THRESHOLD = 0.3f
         private const val IOU_THRESHOLD = 0.5f
     }
 }
-
-
 
