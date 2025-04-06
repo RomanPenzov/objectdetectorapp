@@ -1,0 +1,14 @@
+car
+cliff
+edge-of-a-pond
+edge-of-the-sidewalk
+fence
+green-traffic-light-pedestrian
+hatch
+pedestrian-sign
+railing-fence
+red-traffic-light-pedestrian
+snow
+steps-down
+steps-up
+zebra-marking
