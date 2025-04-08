@@ -9,35 +9,46 @@ import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.penzov.objectdetectorapp.ui.theme.ObjectDetectorAppTheme
 import com.penzov.objectdetectorapp.Speaker
+import com.penzov.objectdetectorapp.TelegramNotifier
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var cameraExecutor: ExecutorService
-    private lateinit var speaker: Speaker // Озвучка TTS
+    private lateinit var speaker: Speaker
+    private lateinit var notifier: TelegramNotifier
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d("DEBUG", "\uD83D\uDE80 MainActivity запускается")
+        Log.d("DEBUG", "🚀 MainActivity запускается")
 
         speaker = Speaker(this)
+        notifier = TelegramNotifier(this)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         setContent {
             ObjectDetectorAppTheme {
+                val navController = rememberNavController()
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    DetectorUI(speaker = speaker)
+                    AppNavigation(navController, speaker, notifier)
                 }
             }
         }
@@ -51,7 +62,85 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun DetectorUI(speaker: Speaker) {
+fun AppNavigation(
+    navController: NavHostController,
+    speaker: Speaker,
+    notifier: TelegramNotifier
+) {
+    NavHost(navController = navController, startDestination = "main") {
+        composable("main") {
+            MainDetectorScreen(speaker, notifier, onSettingsClick = {
+                navController.navigate("settings")
+            })
+        }
+        composable("settings") {
+            TelegramSettingsScreen(notifier = notifier, onBack = {
+                navController.popBackStack()
+            })
+        }
+    }
+}
+
+@Composable
+fun TelegramSettingsScreen(notifier: TelegramNotifier, onBack: () -> Unit) {
+    var newRecipient by remember { mutableStateOf(TextFieldValue("")) }
+    val recipients = remember { mutableStateListOf<String>().apply { addAll(notifier.getRecipients()) } }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Настройки Telegram уведомлений", style = MaterialTheme.typography.headlineSmall)
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(modifier = Modifier.fillMaxWidth()) {
+            TextField(
+                value = newRecipient,
+                onValueChange = { newRecipient = it },
+                modifier = Modifier.weight(1f),
+                label = { Text("Введите Telegram ID") }
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = {
+                val id = newRecipient.text.trim()
+                if (id.isNotEmpty() && id !in recipients) {
+                    recipients.add(id)
+                    notifier.addRecipient(id)
+                    newRecipient = TextFieldValue("")
+                }
+            }) {
+                Text("Добавить")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(recipients) { id ->
+                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Text("ID: $id", modifier = Modifier.weight(1f))
+                    Button(onClick = {
+                        recipients.remove(id)
+                        notifier.removeRecipient(id)
+                    }) {
+                        Text("Удалить")
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+            Text("← Назад")
+        }
+    }
+}
+
+@Composable
+fun MainDetectorScreen(
+    speaker: Speaker,
+    notifier: TelegramNotifier,
+    onSettingsClick: () -> Unit
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -71,7 +160,6 @@ fun DetectorUI(speaker: Speaker) {
 
     val classifierState = remember { mutableStateOf<YoloV8Classifier?>(null) }
 
-    // Пересоздание классификатора при смене модели
     LaunchedEffect(modelName) {
         classifierState.value = YoloV8Classifier(
             context = context,
@@ -82,8 +170,14 @@ fun DetectorUI(speaker: Speaker) {
                 inferenceTime = timeMs
                 outputText = "⏱ ${timeMs}мс, Объектов: ${boxes.size}"
 
-                // 🔈 Озвучка только новых объектов
                 speaker.speakNewObjects(boxes)
+
+                val labels = boxes.map { it.label }
+                val grouped = labels.groupingBy { it }.eachCount()
+                val message = grouped.entries.joinToString(", ") { (label, count) ->
+                    if (count == 1) label else "$count $label"
+                }
+                notifier.sendToAll("📷 Обнаружены: $message")
             },
             onEmpty = {
                 trackedBoxes = emptyList()
@@ -94,23 +188,14 @@ fun DetectorUI(speaker: Speaker) {
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(8.dp)) {
-        Box(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth()) {
             var expanded by remember { mutableStateOf(false) }
-
-            Button(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = { expanded = !expanded }, modifier = Modifier.weight(1f)) {
                 Text(text = selectedLabel)
             }
-
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                models.keys.forEach {
-                    DropdownMenuItem(
-                        text = { Text(it) },
-                        onClick = {
-                            selectedLabel = it
-                            expanded = false
-                        }
-                    )
-                }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = onSettingsClick) {
+                Text("⚙ Настройки")
             }
         }
 
@@ -168,14 +253,8 @@ fun DetectorUI(speaker: Speaker) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Text(
-            text = outputText,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.fillMaxWidth()
-        )
+        Text(text = outputText, style = MaterialTheme.typography.labelSmall, modifier = Modifier.fillMaxWidth())
     }
 }
-
-
 
 

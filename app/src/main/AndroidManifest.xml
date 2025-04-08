@@ -5,6 +5,9 @@
     <!-- Разрешение на доступ к камере -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- Разрешение для работы с сетью (в том числе RTSP) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Устройство должно иметь хотя бы одну камеру -->
     <uses-feature android:name="android.hardware.camera.any" />
 
