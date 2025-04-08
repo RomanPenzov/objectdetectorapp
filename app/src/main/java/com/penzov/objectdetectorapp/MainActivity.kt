@@ -25,19 +25,19 @@ import java.util.concurrent.Executors
 class MainActivity : ComponentActivity() {
 
     private lateinit var cameraExecutor: ExecutorService
-    private lateinit var speaker: Speaker // Добавил озвучку
+    private lateinit var speaker: Speaker // Озвучка TTS
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d("DEBUG", "\uD83D\uDE80 MainActivity запускается")
 
-        speaker = Speaker(this) // Инициализация TTS
+        speaker = Speaker(this)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         setContent {
             ObjectDetectorAppTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    DetectorUI(speaker = speaker) // Передаю speaker в UI
+                    DetectorUI(speaker = speaker)
                 }
             }
         }
@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        speaker.shutdown() // Чистим TTS
+        speaker.shutdown()
         cameraExecutor.shutdown()
     }
 }
@@ -66,28 +66,27 @@ fun DetectorUI(speaker: Speaker) {
     val (modelName, labelName) = models[selectedLabel]!!
 
     var outputText by remember { mutableStateOf("Ожидание инференса...") }
-    var boundingBoxes by remember { mutableStateOf(listOf<BoundingBox>()) }
+    var trackedBoxes by remember { mutableStateOf(listOf<TrackedBox>()) }
     var inferenceTime by remember { mutableStateOf(0L) }
 
     val classifierState = remember { mutableStateOf<YoloV8Classifier?>(null) }
 
-    // Когда модель сменилась - пересоздаю classifier
+    // Пересоздание классификатора при смене модели
     LaunchedEffect(modelName) {
         classifierState.value = YoloV8Classifier(
             context = context,
             modelPath = modelName,
             labelPath = labelName,
             onResult = { boxes, timeMs ->
-                boundingBoxes = boxes
+                trackedBoxes = boxes
                 inferenceTime = timeMs
                 outputText = "⏱ ${timeMs}мс, Объектов: ${boxes.size}"
 
-                // Озвучка объектов
-                val labels = boxes.map { it.label }
-                speaker.speakObjectCounts(labels)
+                // 🔈 Озвучка только новых объектов
+                speaker.speakNewObjects(boxes)
             },
             onEmpty = {
-                boundingBoxes = emptyList()
+                trackedBoxes = emptyList()
                 inferenceTime = 0L
                 outputText = "⏱ Нет объектов"
             }
@@ -142,7 +141,7 @@ fun DetectorUI(speaker: Speaker) {
                         val bitmap = previewView.bitmap
                         if (bitmap != null) {
                             classifierState.value?.runInference(bitmap)
-                            overlay.setBoxes(boundingBoxes, inferenceTime)
+                            overlay.setBoxes(trackedBoxes, inferenceTime)
                         }
                         imageProxy.close()
                     }
@@ -176,6 +175,7 @@ fun DetectorUI(speaker: Speaker) {
         )
     }
 }
+
 
 
 

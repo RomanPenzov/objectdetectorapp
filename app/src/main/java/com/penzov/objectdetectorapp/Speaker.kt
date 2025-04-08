@@ -4,12 +4,15 @@ import android.content.Context
 import android.speech.tts.TextToSpeech
 import java.util.Locale
 
+// Обновил Speaker: теперь озвучка работает по трекнутым объектам (TrackedBox)
 class Speaker(context: Context) {
 
     private lateinit var tts: TextToSpeech
-    private var lastSpokenText: String? = null
     private var lastSpokenTime: Long = 0
-    private val speakIntervalMs: Long = 10000L // ⏱ Задержка между озвучками
+    private val speakIntervalMs: Long = 3000L // ⏱ задержка между озвучками (3 сек)
+
+    // Кэш озвученных объектов, чтобы не повторяться
+    private val spokenTrackIds = mutableSetOf<Int>()
 
     init {
         var tempTts: TextToSpeech? = null
@@ -23,22 +26,24 @@ class Speaker(context: Context) {
         tts = tempTts
     }
 
-    fun speakObjectCounts(labels: List<String>) {
-        if (labels.isEmpty()) return
+    // 🎤 Получаю список трекнутых боксов и озвучиваю только НОВЫЕ
+    fun speakNewObjects(boxes: List<TrackedBox>) {
+        if (boxes.isEmpty()) return
 
-        val grouped = labels.groupingBy { it }.eachCount()
+        val newBoxes = boxes.filter { it.trackId !in spokenTrackIds }
+        if (newBoxes.isEmpty()) return
 
+        val grouped = newBoxes.groupingBy { it.label }.eachCount()
         val sentence = grouped.entries.joinToString(", ") { (label, count) ->
             if (count == 1) label else "${numberToText(count)} $label"
         }
 
         val currentTime = System.currentTimeMillis()
-        val shouldSpeak = sentence != lastSpokenText || (currentTime - lastSpokenTime > speakIntervalMs)
-
-        if (shouldSpeak) {
+        if (currentTime - lastSpokenTime >= speakIntervalMs) {
             tts.speak(sentence, TextToSpeech.QUEUE_FLUSH, null, "tts_id")
-            lastSpokenText = sentence
             lastSpokenTime = currentTime
+            // Добавляю новые трек-ID в кэш
+            spokenTrackIds.addAll(newBoxes.map { it.trackId })
         }
     }
 
@@ -65,5 +70,6 @@ class Speaker(context: Context) {
         }
     }
 }
+
 
 
