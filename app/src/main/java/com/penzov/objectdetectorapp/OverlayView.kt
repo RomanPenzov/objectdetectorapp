@@ -4,13 +4,13 @@ import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
 import android.view.View
+import kotlin.math.abs
 
 class OverlayView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
     private val paintBox = Paint().apply {
-        color = Color.RED
         strokeWidth = 4f
         style = Paint.Style.STROKE
     }
@@ -25,15 +25,18 @@ class OverlayView @JvmOverloads constructor(
 
     private val paintTime = Paint().apply {
         color = Color.LTGRAY
-        textSize = 20f
+        textSize = 20f // маленький шрифт
         style = Paint.Style.FILL
         isAntiAlias = true
         setShadowLayer(2f, 1f, 1f, Color.BLACK)
     }
 
-    // 🔁 Теперь отображаю TrackedBox вместо BoundingBox
+    // 🧠 Храню список трекнутых объектов и время инференса
     private var boxes: List<TrackedBox> = emptyList()
     private var inferenceTimeMs: Long = 0
+
+    // 🎨 Кэш цветов по trackId, чтобы каждый объект был своим цветом
+    private val trackColors = mutableMapOf<Int, Int>()
 
     fun setBoxes(boxes: List<TrackedBox>, inferenceTimeMs: Long) {
         this.boxes = boxes
@@ -50,10 +53,13 @@ class OverlayView @JvmOverloads constructor(
             val right = (box.x + box.width) * width
             val bottom = (box.y + box.height) * height
 
-            // 🟥 Рисую рамку вокруг объекта
+            // 🎨 Получаю цвет для трека
+            paintBox.color = getColorForTrack(box.trackId)
+
+            // 🟥 Рисую рамку
             canvas.drawRect(left, top, right, bottom, paintBox)
 
-            // 🏷 Подписываю метку, уверенность и трек-ID
+            // 🏷 Метка + % + ID
             val label = "${box.label} ${(box.confidence * 100).toInt()}% (#${box.trackId})"
             canvas.drawText(label, left + 4, top - 10, paintText)
         }
@@ -62,6 +68,14 @@ class OverlayView @JvmOverloads constructor(
         val timeText = "⏱ ${inferenceTimeMs} ms"
         val textWidth = paintTime.measureText(timeText)
         canvas.drawText(timeText, width - textWidth - 16f, height - 12f, paintTime)
+    }
+
+    // 🎨 Генерирую уникальный цвет на основе trackId (всегда одинаковый)
+    private fun getColorForTrack(trackId: Int): Int {
+        return trackColors.getOrPut(trackId) {
+            val hue = (trackId * 57) % 360 // разный угол оттенка
+            Color.HSVToColor(floatArrayOf(hue.toFloat(), 0.8f, 1f))
+        }
     }
 }
 
