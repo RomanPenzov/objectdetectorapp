@@ -9,11 +9,14 @@ import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -43,21 +46,31 @@ class MainActivity : ComponentActivity() {
             ObjectDetectorAppTheme {
                 val navController = rememberNavController()
 
-                // 🧠 Сохраняем и восстанавливаем чувствительность (confidence threshold)
                 val prefs = getSharedPreferences("detector_prefs", MODE_PRIVATE)
                 var confidence by remember {
                     mutableFloatStateOf(prefs.getFloat("confidence", 0.3f))
                 }
-
-                // Автоматически сохраняем новое значение
                 LaunchedEffect(confidence) {
                     prefs.edit().putFloat("confidence", confidence).apply()
                 }
 
+                var selectedLabel by remember {
+                    mutableStateOf(prefs.getString("model_label", "Плохое зрение") ?: "Плохое зрение")
+                }
+                LaunchedEffect(selectedLabel) {
+                    prefs.edit().putString("model_label", selectedLabel).apply()
+                }
+
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    AppNavigation(navController, speaker, notifier, confidence) {
-                        confidence = it
-                    }
+                    AppNavigation(
+                        navController = navController,
+                        speaker = speaker,
+                        notifier = notifier,
+                        confidence = confidence,
+                        selectedLabel = selectedLabel,
+                        onConfidenceChanged = { confidence = it },
+                        onModelSelected = { selectedLabel = it }
+                    )
                 }
             }
         }
@@ -76,13 +89,20 @@ fun AppNavigation(
     speaker: Speaker,
     notifier: TelegramNotifier,
     confidence: Float,
-    onConfidenceChanged: (Float) -> Unit
+    selectedLabel: String,
+    onConfidenceChanged: (Float) -> Unit,
+    onModelSelected: (String) -> Unit
 ) {
     NavHost(navController = navController, startDestination = "main") {
         composable("main") {
-            MainDetectorScreen(speaker, notifier, confidence, onSettingsClick = {
-                navController.navigate("settings")
-            })
+            MainDetectorScreen(
+                speaker = speaker,
+                notifier = notifier,
+                confidence = confidence,
+                selectedLabel = selectedLabel,
+                onModelSelected = onModelSelected,
+                onSettingsClick = { navController.navigate("settings") }
+            )
         }
         composable("settings") {
             SettingsScreen(
@@ -100,6 +120,8 @@ fun MainDetectorScreen(
     speaker: Speaker,
     notifier: TelegramNotifier,
     confidence: Float,
+    selectedLabel: String,
+    onModelSelected: (String) -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -112,7 +134,6 @@ fun MainDetectorScreen(
         "Тест" to ("model_test.tflite" to "labels_test.txt")
     )
 
-    var selectedLabel by remember { mutableStateOf(models.keys.first()) }
     val (modelName, labelName) = models[selectedLabel]!!
 
     var outputText by remember { mutableStateOf("Ожидание инференса...") }
@@ -154,6 +175,17 @@ fun MainDetectorScreen(
             var expanded by remember { mutableStateOf(false) }
             Button(onClick = { expanded = !expanded }, modifier = Modifier.weight(1f)) {
                 Text(text = selectedLabel)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                models.keys.forEach {
+                    DropdownMenuItem(
+                        text = { Text(it) },
+                        onClick = {
+                            onModelSelected(it)
+                            expanded = false
+                        }
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = onSettingsClick) {
@@ -218,3 +250,4 @@ fun MainDetectorScreen(
         Text(text = outputText, style = MaterialTheme.typography.labelSmall, modifier = Modifier.fillMaxWidth())
     }
 }
+
