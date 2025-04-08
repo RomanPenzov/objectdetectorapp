@@ -3,6 +3,7 @@ package com.penzov.objectdetectorapp
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
+import android.util.Log
 import android.view.View
 import kotlin.math.abs
 
@@ -41,6 +42,7 @@ class OverlayView @JvmOverloads constructor(
     fun setBoxes(boxes: List<TrackedBox>, inferenceTimeMs: Long) {
         this.boxes = boxes
         this.inferenceTimeMs = inferenceTimeMs
+        logTrackColors() // логирую ID и цвет
         invalidate()
     }
 
@@ -77,6 +79,16 @@ class OverlayView @JvmOverloads constructor(
             Color.HSVToColor(floatArrayOf(hue.toFloat(), 0.8f, 1f))
         }
     }
+
+    // 📋 Логирую соответствие trackId и цвета в Logcat
+    private fun logTrackColors() {
+        for (box in boxes) {
+            val color = getColorForTrack(box.trackId)
+            val hex = String.format("#%06X", 0xFFFFFF and color)
+            Log.d("TrackColor", "ID=${box.trackId}, Label=${box.label}, Color=$hex")
+        }
+    }
 }
+
 
 
