@@ -9,14 +9,11 @@ import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -25,8 +22,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.penzov.objectdetectorapp.ui.theme.ObjectDetectorAppTheme
-import com.penzov.objectdetectorapp.Speaker
-import com.penzov.objectdetectorapp.TelegramNotifier
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -47,8 +42,22 @@ class MainActivity : ComponentActivity() {
         setContent {
             ObjectDetectorAppTheme {
                 val navController = rememberNavController()
+
+                // 🧠 Сохраняем и восстанавливаем чувствительность (confidence threshold)
+                val prefs = getSharedPreferences("detector_prefs", MODE_PRIVATE)
+                var confidence by remember {
+                    mutableFloatStateOf(prefs.getFloat("confidence", 0.3f))
+                }
+
+                // Автоматически сохраняем новое значение
+                LaunchedEffect(confidence) {
+                    prefs.edit().putFloat("confidence", confidence).apply()
+                }
+
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    AppNavigation(navController, speaker, notifier)
+                    AppNavigation(navController, speaker, notifier, confidence) {
+                        confidence = it
+                    }
                 }
             }
         }
@@ -65,72 +74,23 @@ class MainActivity : ComponentActivity() {
 fun AppNavigation(
     navController: NavHostController,
     speaker: Speaker,
-    notifier: TelegramNotifier
+    notifier: TelegramNotifier,
+    confidence: Float,
+    onConfidenceChanged: (Float) -> Unit
 ) {
     NavHost(navController = navController, startDestination = "main") {
         composable("main") {
-            MainDetectorScreen(speaker, notifier, onSettingsClick = {
+            MainDetectorScreen(speaker, notifier, confidence, onSettingsClick = {
                 navController.navigate("settings")
             })
         }
         composable("settings") {
-            TelegramSettingsScreen(notifier = notifier, onBack = {
-                navController.popBackStack()
-            })
-        }
-    }
-}
-
-@Composable
-fun TelegramSettingsScreen(notifier: TelegramNotifier, onBack: () -> Unit) {
-    var newRecipient by remember { mutableStateOf(TextFieldValue("")) }
-    val recipients = remember { mutableStateListOf<String>().apply { addAll(notifier.getRecipients()) } }
-
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Настройки Telegram уведомлений", style = MaterialTheme.typography.headlineSmall)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Row(modifier = Modifier.fillMaxWidth()) {
-            TextField(
-                value = newRecipient,
-                onValueChange = { newRecipient = it },
-                modifier = Modifier.weight(1f),
-                label = { Text("Введите Telegram ID") }
+            SettingsScreen(
+                notifier = notifier,
+                confidence = confidence,
+                onConfidenceChanged = onConfidenceChanged,
+                onBack = { navController.popBackStack() }
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = {
-                val id = newRecipient.text.trim()
-                if (id.isNotEmpty() && id !in recipients) {
-                    recipients.add(id)
-                    notifier.addRecipient(id)
-                    newRecipient = TextFieldValue("")
-                }
-            }) {
-                Text("Добавить")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(recipients) { id ->
-                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Text("ID: $id", modifier = Modifier.weight(1f))
-                    Button(onClick = {
-                        recipients.remove(id)
-                        notifier.removeRecipient(id)
-                    }) {
-                        Text("Удалить")
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-            Text("← Назад")
         }
     }
 }
@@ -139,6 +99,7 @@ fun TelegramSettingsScreen(notifier: TelegramNotifier, onBack: () -> Unit) {
 fun MainDetectorScreen(
     speaker: Speaker,
     notifier: TelegramNotifier,
+    confidence: Float,
     onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -160,11 +121,12 @@ fun MainDetectorScreen(
 
     val classifierState = remember { mutableStateOf<YoloV8Classifier?>(null) }
 
-    LaunchedEffect(modelName) {
+    LaunchedEffect(modelName, confidence) {
         classifierState.value = YoloV8Classifier(
             context = context,
             modelPath = modelName,
             labelPath = labelName,
+            confidenceThreshold = confidence,
             onResult = { boxes, timeMs ->
                 trackedBoxes = boxes
                 inferenceTime = timeMs
@@ -256,5 +218,3 @@ fun MainDetectorScreen(
         Text(text = outputText, style = MaterialTheme.typography.labelSmall, modifier = Modifier.fillMaxWidth())
     }
 }
-
-

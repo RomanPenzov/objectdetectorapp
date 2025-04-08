@@ -20,6 +20,7 @@ class YoloV8Classifier(
     private val context: Context,
     private val modelPath: String,
     private val labelPath: String,
+    private val confidenceThreshold: Float = 0.3f, // ✅ теперь передаётся как параметр
     private val onResult: (List<TrackedBox>, Long) -> Unit, // Теперь отдаю трекнутые боксы
     private val onEmpty: () -> Unit
 ) {
@@ -40,19 +41,19 @@ class YoloV8Classifier(
     private val tracker = SimpleSortTracker() // Добавил трекер
 
     init {
-        Log.d("ClassifierInit", "\uD83E\uDDE0 Начинаю инициализацию")
-        Log.d("ClassifierInit", "\uD83D\uDCE6 Загружаю модель: $modelPath")
-        Log.d("ClassifierInit", "\uD83D\uDCC3 Загружаю labels: $labelPath")
+        Log.d("ClassifierInit", "🧠 Начинаю инициализацию")
+        Log.d("ClassifierInit", "📦 Загружаю модель: $modelPath")
+        Log.d("ClassifierInit", "📃 Загружаю labels: $labelPath")
 
         val compatList = CompatibilityList()
         val options = Interpreter.Options().apply {
             if (compatList.isDelegateSupportedOnThisDevice) {
                 val delegateOptions = compatList.bestOptionsForThisDevice
                 addDelegate(GpuDelegate(delegateOptions))
-                Log.d("ClassifierInit", "\u26A1 \u0418спользуем GPU")
+                Log.d("ClassifierInit", "⚡ Используем GPU")
             } else {
                 setNumThreads(4)
-                Log.d("ClassifierInit", "\u26A0\uFE0F \u0418спользуем CPU")
+                Log.d("ClassifierInit", "⚠️ Используем CPU")
             }
         }
 
@@ -97,7 +98,7 @@ class YoloV8Classifier(
         val boxes = mutableListOf<BoundingBox>()
 
         for (i in 0 until numElements) {
-            var maxConf = CONFIDENCE_THRESHOLD
+            var maxConf = confidenceThreshold // 🧠 используем заданный порог
             var maxIdx = -1
             var j = 4
             var arrayIdx = i + numElements * j
@@ -174,7 +175,6 @@ class YoloV8Classifier(
     }
 
     companion object {
-        private const val CONFIDENCE_THRESHOLD = 0.3f
         private const val IOU_THRESHOLD = 0.5f
 
         // Здесь словарь с переводами меток (один раз встроен внутрь класса)
@@ -275,5 +275,4 @@ class YoloV8Classifier(
         )
     }
 }
-
 
