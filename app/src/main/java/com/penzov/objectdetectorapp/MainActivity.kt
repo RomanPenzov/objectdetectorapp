@@ -1,3 +1,4 @@
+// Я расширяю MainActivity, добавляя поддержку выбора источника камеры (встроенная / RTSP)
 package com.penzov.objectdetectorapp
 
 import android.os.Bundle
@@ -27,9 +28,10 @@ import androidx.navigation.compose.rememberNavController
 import com.penzov.objectdetectorapp.ui.theme.ObjectDetectorAppTheme
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.MediaItem
 
 class MainActivity : ComponentActivity() {
-
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var speaker: Speaker
     private lateinit var notifier: TelegramNotifier
@@ -47,6 +49,8 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
 
                 val prefs = getSharedPreferences("detector_prefs", MODE_PRIVATE)
+
+                // 🧠 Сохраняю чувствительность модели
                 var confidence by remember {
                     mutableFloatStateOf(prefs.getFloat("confidence", 0.3f))
                 }
@@ -54,11 +58,20 @@ class MainActivity : ComponentActivity() {
                     prefs.edit().putFloat("confidence", confidence).apply()
                 }
 
+                // 📂 Сохраняю выбранную модель
                 var selectedLabel by remember {
                     mutableStateOf(prefs.getString("model_label", "Плохое зрение") ?: "Плохое зрение")
                 }
                 LaunchedEffect(selectedLabel) {
                     prefs.edit().putString("model_label", selectedLabel).apply()
+                }
+
+                // 📷 Сохраняю выбранный источник камеры
+                var cameraSource by remember {
+                    mutableStateOf(CameraSourceType.valueOf(prefs.getString("camera_source", "INTERNAL")!!))
+                }
+                LaunchedEffect(cameraSource) {
+                    prefs.edit().putString("camera_source", cameraSource.name).apply()
                 }
 
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -68,8 +81,10 @@ class MainActivity : ComponentActivity() {
                         notifier = notifier,
                         confidence = confidence,
                         selectedLabel = selectedLabel,
+                        cameraSource = cameraSource,
                         onConfidenceChanged = { confidence = it },
-                        onModelSelected = { selectedLabel = it }
+                        onModelSelected = { selectedLabel = it },
+                        onCameraSourceChanged = { cameraSource = it }
                     )
                 }
             }
@@ -90,8 +105,10 @@ fun AppNavigation(
     notifier: TelegramNotifier,
     confidence: Float,
     selectedLabel: String,
+    cameraSource: CameraSourceType,
     onConfidenceChanged: (Float) -> Unit,
-    onModelSelected: (String) -> Unit
+    onModelSelected: (String) -> Unit,
+    onCameraSourceChanged: (CameraSourceType) -> Unit
 ) {
     NavHost(navController = navController, startDestination = "main") {
         composable("main") {
@@ -100,6 +117,7 @@ fun AppNavigation(
                 notifier = notifier,
                 confidence = confidence,
                 selectedLabel = selectedLabel,
+                cameraSource = cameraSource,
                 onModelSelected = onModelSelected,
                 onSettingsClick = { navController.navigate("settings") }
             )
@@ -109,11 +127,17 @@ fun AppNavigation(
                 notifier = notifier,
                 confidence = confidence,
                 onConfidenceChanged = onConfidenceChanged,
+                cameraSource = cameraSource,
+                onCameraSourceChanged = onCameraSourceChanged,
                 onBack = { navController.popBackStack() }
             )
         }
     }
 }
+
+// 🧠 MainDetectorScreen (финальная версия с поддержкой RTSP)
+// В этой версии я добавляю переключение между камерой телефона (CameraX) и внешней WiFi-камерой (RTSP)
+// Использую YoloV8Classifier, OverlayView, Speaker и TelegramNotifier как раньше
 
 @Composable
 fun MainDetectorScreen(
@@ -121,12 +145,14 @@ fun MainDetectorScreen(
     notifier: TelegramNotifier,
     confidence: Float,
     selectedLabel: String,
+    cameraSource: CameraSourceType,
     onModelSelected: (String) -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    // Карта с путями к моделям TFLite и их метками
     val models = mapOf(
         "Плохое зрение" to ("model_blind.tflite" to "labels_blind.txt"),
         "Дети" to ("model_child.tflite" to "labels_child.txt"),
@@ -139,9 +165,9 @@ fun MainDetectorScreen(
     var outputText by remember { mutableStateOf("Ожидание инференса...") }
     var trackedBoxes by remember { mutableStateOf(listOf<TrackedBox>()) }
     var inferenceTime by remember { mutableStateOf(0L) }
-
     val classifierState = remember { mutableStateOf<YoloV8Classifier?>(null) }
 
+    // 🎯 Инициализирую YoloV8Classifier при изменении модели или confidence
     LaunchedEffect(modelName, confidence) {
         classifierState.value = YoloV8Classifier(
             context = context,
@@ -153,8 +179,10 @@ fun MainDetectorScreen(
                 inferenceTime = timeMs
                 outputText = "⏱ ${timeMs}мс, Объектов: ${boxes.size}"
 
+                // 🗣️ Озвучиваю новые объекты
                 speaker.speakNewObjects(boxes)
 
+                // 📬 Формирую сообщение для Telegram
                 val labels = boxes.map { it.label }
                 val grouped = labels.groupingBy { it }.eachCount()
                 val message = grouped.entries.joinToString(", ") { (label, count) ->
@@ -195,59 +223,102 @@ fun MainDetectorScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        AndroidView(
-            factory = { ctx ->
-                val previewView = PreviewView(ctx)
-                val overlay = OverlayView(ctx)
+        if (cameraSource == CameraSourceType.INTERNAL) {
+            // 📸 Встроенная камера через CameraX
+            AndroidView(
+                factory = { ctx ->
+                    val previewView = PreviewView(ctx)
+                    val overlay = OverlayView(ctx)
 
-                val frameLayout = FrameLayout(ctx).apply {
-                    addView(previewView)
-                    addView(overlay)
-                }
-
-                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
-                    val preview = Preview.Builder().build().apply {
-                        setSurfaceProvider(previewView.surfaceProvider)
+                    val frameLayout = FrameLayout(ctx).apply {
+                        addView(previewView)
+                        addView(overlay)
                     }
 
-                    val analyzer = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-
-                    analyzer.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
-                        val bitmap = previewView.bitmap
-                        if (bitmap != null) {
-                            classifierState.value?.runInference(bitmap)
-                            overlay.setBoxes(trackedBoxes, inferenceTime)
+                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                    cameraProviderFuture.addListener({
+                        val cameraProvider = cameraProviderFuture.get()
+                        val preview = Preview.Builder().build().apply {
+                            setSurfaceProvider(previewView.surfaceProvider)
                         }
-                        imageProxy.close()
+
+                        val analyzer = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .build()
+
+                        analyzer.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
+                            val bitmap = previewView.bitmap
+                            if (bitmap != null) {
+                                classifierState.value?.runInference(bitmap)
+                                overlay.setBoxes(trackedBoxes, inferenceTime)
+                            }
+                            imageProxy.close()
+                        }
+
+                        try {
+                            cameraProvider.unbindAll()
+                            cameraProvider.bindToLifecycle(
+                                lifecycleOwner,
+                                CameraSelector.DEFAULT_BACK_CAMERA,
+                                preview,
+                                analyzer
+                            )
+                        } catch (exc: Exception) {
+                            Log.e("CameraX", "Ошибка камеры", exc)
+                        }
+                    }, ContextCompat.getMainExecutor(ctx))
+
+                    frameLayout
+                },
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            )
+        } else {
+            // 🌐 Внешняя RTSP WiFi камера через ExoPlayer и TextureView
+            var analyzer by remember { mutableStateOf<RtspFrameAnalyzer?>(null) }
+
+            AndroidView(
+                factory = { ctx ->
+                    val textureView = android.view.TextureView(ctx)
+                    val overlay = OverlayView(ctx)
+
+                    val frameLayout = FrameLayout(ctx).apply {
+                        addView(textureView)
+                        addView(overlay)
                     }
 
-                    try {
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(
-                            lifecycleOwner,
-                            CameraSelector.DEFAULT_BACK_CAMERA,
-                            preview,
-                            analyzer
-                        )
-                    } catch (exc: Exception) {
-                        Log.e("CameraX", "Ошибка камеры", exc)
-                    }
-                }, ContextCompat.getMainExecutor(ctx))
+                    //val player = com.google.android.exoplayer2.ExoPlayer.Builder(ctx).build()
+                    //val mediaItem = com.google.android.exoplayer2.MediaItem.fromUri("rtsp://192.168.10.1:554")
+                    val player = ExoPlayer.Builder(ctx).build()
+                    val mediaItem = MediaItem.fromUri("rtsp://192.168.10.1:554")
+                    player.setMediaItem(mediaItem)
+                    player.setVideoTextureView(textureView)
+                    player.prepare()
+                    player.playWhenReady = true
 
-                frameLayout
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        )
+                    analyzer = RtspFrameAnalyzer(textureView) { bitmap ->
+                        classifierState.value?.runInference(bitmap)
+                        overlay.setBoxes(trackedBoxes, inferenceTime)
+                    }
+                    analyzer?.start()
+
+                    frameLayout
+                },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                update = {}
+            )
+
+            // 📌 Не забываю остановить анализ при уходе с экрана
+            DisposableEffect(Unit) {
+                onDispose {
+                    analyzer?.stop()
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(text = outputText, style = MaterialTheme.typography.labelSmall, modifier = Modifier.fillMaxWidth())
     }
 }
+
 

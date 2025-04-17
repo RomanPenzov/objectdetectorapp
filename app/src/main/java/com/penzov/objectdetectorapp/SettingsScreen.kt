@@ -1,3 +1,4 @@
+// 👇 Добавляем выбор между внутренней камерой и RTSP-камерой
 package com.penzov.objectdetectorapp
 
 import androidx.compose.foundation.layout.*
@@ -17,18 +18,17 @@ fun SettingsScreen(
     notifier: TelegramNotifier,
     confidence: Float,
     onConfidenceChanged: (Float) -> Unit,
+    cameraSource: CameraSourceType,
+    onCameraSourceChanged: (CameraSourceType) -> Unit,
     onBack: () -> Unit
 ) {
-    // Состояние для нового Telegram ID
     var newRecipient by remember { mutableStateOf(TextFieldValue("")) }
     val recipients = remember { mutableStateListOf<String>().apply { addAll(notifier.getRecipients()) } }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-
         Text("Настройки приложения", style = MaterialTheme.typography.headlineSmall)
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 🧠 Карточка для настройки чувствительности модели (порог доверия)
         Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation()) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -49,7 +49,28 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // 💬 Карточка Telegram получателей
+        // 📷 Выбор источника видео
+        Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Источник камеры", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = cameraSource == CameraSourceType.INTERNAL,
+                        onClick = { onCameraSourceChanged(CameraSourceType.INTERNAL) }
+                    )
+                    Text("Телефон", modifier = Modifier.padding(end = 16.dp))
+                    RadioButton(
+                        selected = cameraSource == CameraSourceType.RTSP,
+                        onClick = { onCameraSourceChanged(CameraSourceType.RTSP) }
+                    )
+                    Text("WiFi-камера")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
         Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation()) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Получатели уведомлений в Telegram", style = MaterialTheme.typography.titleMedium)

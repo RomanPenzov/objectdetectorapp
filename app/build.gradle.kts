@@ -100,4 +100,14 @@ dependencies {
     // Jetpack Navigation Compose
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
+    // 📦 ExoPlayer Core
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+
+    // 📺 ExoPlayer UI (если нужно встроенное управление — у нас не обязательно)
+    implementation("androidx.media3:media3-ui:1.3.1")
+    implementation("androidx.media3:media3-common:1.3.1")
+
+    // 📡 RTSP поддержка
+    implementation("androidx.media3:media3-exoplayer-rtsp:1.3.1")
+
 }
