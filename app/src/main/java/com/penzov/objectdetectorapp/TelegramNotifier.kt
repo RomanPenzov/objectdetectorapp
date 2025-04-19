@@ -22,7 +22,7 @@ class TelegramNotifier(private val context: Context) {
     private val key = "recipient_ids"
     private val client = OkHttpClient()
 
-    private val token = "7981670687:AAFVb69As3SBWof7d_3ll3O6NjaEcbEfyYc"
+    private val token = "token bota"
     private val url = "https://api.telegram.org/bot$token/sendMessage"
 
     // Загружаю ID из памяти
