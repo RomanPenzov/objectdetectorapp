@@ -1,9 +1,0 @@
-{
-  "version": 2,
-  "lang": "ru",
-  "sample_rate": 16000,
-  "nnet": {
-    "type": "nnet3",
-    "use_gpu": false
-  }
-}
